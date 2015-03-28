@@ -5,7 +5,7 @@
 
   done = null;
   doneTimeout = null;
-  isAsync = false;
+  isAsync = 0;
 
   Ember.Test.MochaAdapter = Ember.Test.Adapter.extend({
     init: function() {
@@ -14,39 +14,51 @@
       window.mocha.ui('ember-bdd');
     },
     asyncStart: function() {
-      isAsync = true;
+      isAsync++;
       clearTimeout(doneTimeout);
     },
     asyncEnd: function() {
-      isAsync = false;
-      if (done && !isPromise) {
+      if (--isAsync === 0 && done && !isPromise) {
         doneTimeout = setTimeout(function() {
           complete();
         });
       }
     },
     exception: function(reason) {
-      var error, d;
-
-      error = new Error(reason);
+      if (!(reason instanceof Error)) {
+        reason = new Error(reason);
+      }
       if (done) {
-        complete(error);
+        complete(reason);
       } else {
         setTimeout(function() {
-          throw error;
+          throw reason;
         });
       }
     }
   });
 
   function fixAsync(suites, methodName) {
-    return function(fn) {
-      if (fn.length === 1) {
-        suites[0][methodName](fn);
-      } else {
-        suites[0][methodName](function(d) {
+    return function(name, fn) {
+      if (!fn) {
+        fn = name;
+        name = fn.name;
+      }
+
+      var suite = suites[0];
+      var hook = suite[methodName];
+      var asyncFn = fn;
+
+      if (fn.length === 0) {
+        asyncFn = function(d) {
           invoke(this, fn, d);
-        });
+        };
+      }
+
+      if (hook.length === 2) {
+        hook.call(suite, name, asyncFn);
+      } else {
+        hook.call(suite, asyncFn);
       }
     };
   }
@@ -61,7 +73,7 @@
       isPromise = true;
       result.then(function() { complete(); }, complete);
     } else {
-       if (!isAsync) { complete(); }
+       if (isAsync === 0) { complete(); }
     }
   }
 
